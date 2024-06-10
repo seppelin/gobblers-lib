@@ -178,19 +178,37 @@ pub struct Move {
     pub to: i32,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Select {
+    None,
+    From,
+    Move,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameBoard {
     history: Vec<Move>,
     b: Board,
     s: State,
+    sel: Select,
+    m: Move,
+    pub auto_select: bool,
 }
 
 impl GameBoard {
-    pub fn new() -> GameBoard {
+    pub fn new(auto_select: bool) -> GameBoard {
         return GameBoard {
             history: Vec::new(),
             b: Board::new(),
             s: State::InGame,
+            sel: Select::None,
+            m: Move {
+                is_new: false,
+                size: 0,
+                from: 0,
+                to: 0,
+            },
+            auto_select,
         };
     }
 
@@ -246,10 +264,19 @@ impl GameBoard {
         return &self.history;
     }
 
+    pub fn get_top_player(&self, pos: i32) -> Option<i32> {
+        for size in (0..3).rev() {
+            if self.b.layers[self.b.idx(size)] & (1 << pos) != 0 {
+                return Some(size);
+            }
+        }
+        return None;
+    }
+
     // Player + Size
     pub fn get_top(&self, pos: i32) -> Option<(i32, i32)> {
-        for p in 0..2 {
-            for size in (0..3).rev() {
+        for size in (0..3).rev() {
+            for p in 0..2 {
                 if self.b.layers[(p * 3 + size) as usize] & (1 << pos) != 0 {
                     return Some((p, size));
                 }
@@ -267,6 +294,7 @@ impl GameBoard {
     }
 
     fn update_state(&mut self) {
+        self.sel = Select::None;
         match self.b.get_state() {
             0 => self.s = State::InGame,
             1 => self.s = State::Win,
@@ -301,7 +329,49 @@ impl GameBoard {
         return true;
     }
 
-    pub fn get_moves(&mut self) -> Vec<Move> {
+    pub fn select_board(&mut self, pos: i32) -> bool {
+        if self.sel == Select::None {
+            if let Some((p, s)) = self.get_top(pos) {
+                if p == self.b.player {
+                    self.sel = Select::From;
+                    self.m.is_new = false;
+                    self.m.size = s;
+                    self.m.from = pos;
+                }
+            }
+        } else {
+            if self.b.is_free(self.m.size, pos) {
+                self.sel = Select::Move;
+                self.m.to = pos;
+                if self.auto_select {
+                    self.submit_select();
+                }
+                return true;
+            } else {
+                self.sel = Select::None;
+            }
+        }
+        return false;
+    }
+
+    pub fn select_new(&mut self, size: i32) {
+        if self.b.is_left(size) {
+            self.sel = Select::From;
+            self.m.is_new = true;
+            self.m.size = size;
+        }
+        self.sel = Select::None;
+    }
+
+    pub fn submit_select(&mut self) -> bool {
+        if self.sel == Select::Move {
+            self.do_move(self.m);
+            return true;
+        }
+        return false;
+    }
+
+    pub fn get_moves(&self) -> Vec<Move> {
         let mut moves = Vec::new();
         for to in 0..9 {
             for size in 0..3 {
