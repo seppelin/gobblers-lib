@@ -264,7 +264,7 @@ impl Search {
     }
 
     pub fn pre_evaluate(&mut self, depth: i32, max_depth: i32) {
-        let mut board = GameBoard::new();
+        let mut board = GameBoard::new(true);
         let mut entries = Vec::new();
         let mut count = 0;
         let id = AtomicUsize::new(0);
