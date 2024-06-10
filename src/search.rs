@@ -7,7 +7,7 @@ use std::{
 
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
-use crate::game::{Board, GameBoard, State};
+use crate::{Board, GameBoard, State};
 
 const MAX_SCORE: i32 = 10000;
 const MIN_SCORE: i32 = -MAX_SCORE;
@@ -163,7 +163,7 @@ pub enum EvalKind {
     Win,
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Evaluation {
     pub kind: EvalKind,
     pub depth: u16,
