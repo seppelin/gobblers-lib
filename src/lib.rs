@@ -3,10 +3,10 @@ pub mod search;
 use std::fmt::{Debug, Write};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Board {
-    layers: [i32; 6],
-    pieces: [i32; 6],
-    player: i32,
+pub struct Board {
+    pub layers: [i32; 6],
+    pub pieces: [i32; 6],
+    pub player: i32,
 }
 
 impl Board {
@@ -67,7 +67,7 @@ impl Board {
         return ((1 << pos) & self.layers[self.idx(size)] & !bigger) != 0;
     }
 
-    fn get_view(&self, player: i32) -> i32 {
+    pub fn get_view(&self, player: i32) -> i32 {
         let zro =
             self.layers[(player * 3) as usize] & !self.layers[((player ^ 1) * 3 + 1) as usize];
         let one = (zro | self.layers[(player * 3 + 1) as usize])
@@ -76,7 +76,7 @@ impl Board {
         return two & 0b111111111;
     }
 
-    fn is_line(view: i32) -> bool {
+    pub fn is_line(view: i32) -> bool {
         let mut check = view & (view << 1) & (view << 2) & 0b100100100;
         check |= view & (view << 2) & (view << 4) & 0b001000000;
         check |= view & (view << 3) & (view << 6);
@@ -100,7 +100,7 @@ impl Board {
         return ((1 << pos) & smaller) != 0;
     }
 
-    fn idx(&self, size: i32) -> usize {
+    pub fn idx(&self, size: i32) -> usize {
         return (self.player * 3 + size) as usize;
     }
 
@@ -179,7 +179,7 @@ pub struct Move {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum Select {
+pub enum Select {
     None,
     From,
     Move,
@@ -212,7 +212,11 @@ impl GameBoard {
         };
     }
 
-    pub(crate) fn get_board(&self) -> &Board {
+    pub fn player(&self) -> i32 {
+        return self.b.player;
+    }
+
+    pub fn get_board(&self) -> &Board {
         return &self.b;
     }
 
@@ -256,21 +260,16 @@ impl GameBoard {
         return max_id;
     }
 
-    pub fn get_state(&self) -> &State {
-        return &self.s;
+    pub fn get_state(&self) -> State {
+        return self.s;
     }
 
     pub fn get_history(&self) -> &Vec<Move> {
         return &self.history;
     }
 
-    pub fn get_top_player(&self, pos: i32) -> Option<i32> {
-        for size in (0..3).rev() {
-            if self.b.layers[self.b.idx(size)] & (1 << pos) != 0 {
-                return Some(size);
-            }
-        }
-        return None;
+    pub fn get_left(&self, player: i32, size: i32) -> i32 {
+        return self.b.pieces[(player*3 + size) as usize];
     }
 
     // Player + Size
@@ -304,32 +303,10 @@ impl GameBoard {
         }
     }
 
-    pub fn do_move(&mut self, m: Move) -> bool {
-        if !self.is_valid(m) || self.s != State::InGame {
-            return false;
-        }
-        match m.is_new {
-            true => self.b.do_new_move(m.size, m.to),
-            false => self.b.do_board_move(m.size, m.from, m.to),
-        };
-        self.history.push(m);
-        self.update_state();
-        return true;
-    }
-
-    pub fn undo_move(&mut self) -> bool {
-        let Some(m) = self.history.pop() else {
-            return false;
-        };
-        match m.is_new {
-            true => self.b.undo_new_move(m.size, m.to),
-            false => self.b.undo_board_move(m.size, m.from, m.to),
-        }
-        self.update_state();
-        return true;
-    }
-
     pub fn select_board(&mut self, pos: i32) -> bool {
+        if self.s != State::InGame {
+            return false;
+        }
         if self.sel == Select::None {
             if let Some((p, s)) = self.get_top(pos) {
                 if p == self.b.player {
@@ -354,14 +331,45 @@ impl GameBoard {
         return false;
     }
 
-    pub fn select_new(&mut self, size: i32) {
-        if self.b.is_left(size) {
+    pub fn select_new(&mut self, player: i32, size: i32) {
+        if self.s != State::InGame {
+            return;
+        }
+        if self.b.player == player && self.b.is_left(size) {
             self.sel = Select::From;
             self.m.is_new = true;
             self.m.size = size;
+        } else {
+            self.sel = Select::None;
         }
-        self.sel = Select::None;
     }
+
+    pub fn get_select(&self) -> (Select, Move) {
+        return (self.sel, self.m);
+    }
+
+    pub fn is_selected_board(&self, pos: i32) -> bool {
+        if self.sel != Select::None && !self.m.is_new {
+            if self.m.from == pos {
+                return true;
+            }
+        }
+        if self.sel == Select::Move {
+            if self.m.to == pos {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn is_selected_new(&self, size: i32) -> bool {
+        if self.sel != Select::None && self.m.is_new {
+            if self.m.size == size {
+                return true;
+            }
+        }
+        return false;
+    }    
 
     pub fn submit_select(&mut self) -> bool {
         if self.sel == Select::Move {
@@ -369,6 +377,35 @@ impl GameBoard {
             return true;
         }
         return false;
+    }
+
+    pub fn remove_select(&mut self) {
+        self.sel = Select::None;
+    }
+
+    pub fn do_move(&mut self, m: Move) -> bool {
+        if !self.is_valid(m) || self.s != State::InGame {
+            return false;
+        }
+        match m.is_new {
+            true => self.b.do_new_move(m.size, m.to),
+            false => self.b.do_board_move(m.size, m.from, m.to),
+        };
+        self.history.push(m);
+        self.update_state();
+        return true;
+    }
+
+    pub fn undo_move(&mut self) -> bool {
+        let Some(m) = self.history.pop() else {
+            return false;
+        };
+        match m.is_new {
+            true => self.b.undo_new_move(m.size, m.to),
+            false => self.b.undo_board_move(m.size, m.from, m.to),
+        }
+        self.update_state();
+        return true;
     }
 
     pub fn get_moves(&self) -> Vec<Move> {

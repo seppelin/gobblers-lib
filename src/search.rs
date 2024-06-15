@@ -171,9 +171,9 @@ pub struct Evaluation {
     pub nodes: u64,
 }
 
-fn deepening(b: &GameBoard, start_depth: i32, max_depth: i32) -> Evaluation {
+fn deepening(b: &GameBoard, max_depth: i32) -> Evaluation {
     let mut nodes = 0;
-    let mut depth = start_depth;
+    let mut depth = 0;
     let start = Instant::now();
     loop {
         let mut search_b = b.get_board().clone();
@@ -214,8 +214,9 @@ pub struct Search {
 
 impl Search {
     pub fn new() -> Search {
-        let bytes = fs::read("scorebook").unwrap();
-        let cache: HashMap<u64, Evaluation> = bincode::deserialize(&bytes).unwrap();
+        let bytes = fs::read("scorebook").unwrap_or(Vec::new());
+        let cache: HashMap<u64, Evaluation> =
+            bincode::deserialize(&bytes).unwrap_or(HashMap::new());
         println!("Search loaded: {} entries", cache.len());
         return Search {
             arc: Arc::new((
@@ -230,7 +231,6 @@ impl Search {
 
     pub fn evaluate(&mut self, b: &GameBoard, max_depth: i32) -> Evaluation {
         let id = b.get_max_id();
-        let mut start_depth = std::cmp::min(10, max_depth);
         let mut guard = self.arc.0.lock().unwrap();
         if let Some(_) = guard.eval.get(&id) {
             loop {
@@ -247,12 +247,11 @@ impl Search {
                 eval.time = 0.0;
                 return eval;
             }
-            start_depth = std::cmp::max(start_depth, e.depth as i32);
         }
         guard.eval.insert(id);
         drop(guard);
 
-        let eval = deepening(b, start_depth, max_depth);
+        let eval = deepening(b, max_depth);
 
         let mut guard = self.arc.0.lock().unwrap();
         guard.cache.insert(id, eval);
@@ -274,7 +273,9 @@ impl Search {
             let i = id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             println!("eval {}: {}", i, b.get_max_id());
             let e = s.evaluate(b, max_depth);
-            println!("done {}: {:?}", i, e);
+            if e.depth != 10 {
+                println!("done {}: {:?}", i, e);
+            }
         });
     }
 
@@ -297,7 +298,7 @@ impl Search {
             entries.push((self.clone(), b.clone()));
         }
         drop(guard);
-        if *b.get_state() != State::InGame || depth == 0 {
+        if b.get_state() != State::InGame || depth == 0 {
             return;
         }
         for m in b.get_moves() {
